@@ -1,1 +1,2 @@
 # KIMCHANGHAGO
+취향 반경

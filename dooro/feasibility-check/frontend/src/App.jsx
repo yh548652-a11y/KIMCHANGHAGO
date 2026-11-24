@@ -110,8 +110,9 @@ function App() {
             검색해 보세요.
           </h2>
           <p className="mt-4 max-w-xl text-base leading-7 text-slate-600">
-            Flask 검색 엔드포인트를 통해 Apple iTunes Search API의 실제 작품
-            정보를 조회합니다. 가격은 제공되는 경우의 Apple Store 구매 가격입니다.
+            Flask 검색 엔드포인트를 통해 Apple iTunes Search API와 한국어
+            Wikipedia API의 실제 작품 정보를 조회합니다. 가격은 제공되는 경우의
+            Apple Store 구매 가격입니다.
           </p>
         </section>
 

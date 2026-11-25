@@ -93,18 +93,38 @@ class SpotifySearch:
         for track in tracks:
             if not isinstance(track, dict) or not track.get("id") or not track.get("name"):
                 continue
-            artist = ", ".join(entry["name"] for entry in track.get("artists", []) if entry.get("name"))
+            artist_names = [entry["name"] for entry in track.get("artists", []) if entry.get("name")]
+            artist = ", ".join(artist_names)
             title_words = normalized_words(track["name"])
             searchable = set(title_words + normalized_words(artist))
             if track["id"] in seen or not set(words).issubset(searchable):
                 continue
             seen.add(track["id"])
-            matches.append((title_words == words or (
-                bool(title_words) and title_words == words[:len(title_words)]
-                and set(words[len(title_words):]).issubset(normalized_words(artist))
-            ), normalize_track(track, artist, market, checked_at)))
-        matches.sort(key=lambda match: not match[0])
-        return [item for _, item in matches]
+            rank = match_rank(words, title_words, artist_names)
+            matches.append((rank, normalize_track(track, artist, market, checked_at)))
+        matches.sort(key=lambda match: match[0], reverse=True)
+        # When a title and artist match together, drop looser word-only matches.
+        minimum_rank = 2 if matches and matches[0][0] >= 3 else 1
+        return [item for rank, item in matches if rank >= minimum_rank]
+
+
+def match_rank(query_words, title_words, artist_names):
+    rank = 2 if query_words == title_words else 1
+    for name in artist_names:
+        artist_words = normalized_words(name)
+        if not 0 < len(artist_words) < len(query_words):
+            continue
+        if query_words[:len(artist_words)] == artist_words:
+            requested_title = query_words[len(artist_words):]
+        elif query_words[-len(artist_words):] == artist_words:
+            requested_title = query_words[:-len(artist_words)]
+        else:
+            continue
+        if requested_title == title_words:
+            return 4
+        if set(requested_title).issubset(title_words):
+            rank = 3
+    return rank
 
 
 def normalized_words(value):

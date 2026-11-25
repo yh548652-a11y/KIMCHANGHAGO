@@ -3,6 +3,68 @@ import {createRoot} from 'react-dom/client';
 import './style.css';
 
 const SERVICE_NAME='취향편집';
+const LOCAL_API_BASE = 'http://127.0.0.1:5050';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim() || (import.meta.env.DEV ? LOCAL_API_BASE : window.location.origin);
+const MUSIC_API_BASE = import.meta.env.VITE_MUSIC_API_BASE_URL?.trim();
+
+function musicTime(milliseconds) {
+ const seconds = Math.floor(milliseconds / 1000);
+ return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function ExternalDetails({item}) {
+ if (!item.source_name || ['TMDB', 'Spotify'].includes(item.source_name)) return null;
+ const checkedAt = Date.parse(item.checked_at);
+ const purchase = item.price_type === 'store_purchase' && item.price_amount >= 0 &&
+  Number.isFinite(item.price_amount) && item.currency
+  ? `Apple Store 개별 구매가 ${item.price_amount} ${item.currency}` : null;
+ return <p className="creator">
+  {[item.source_name, purchase, Number.isFinite(checkedAt) ? `확인 ${new Date(checkedAt).toLocaleString('ko-KR')}` : null].filter(Boolean).join(' · ')}
+ </p>;
+}
+
+function MediaDetails({item, expanded = false}) {
+ if (item.source_name !== 'TMDB') return null;
+ const fields = [
+  item.release_date,
+  Number.isFinite(item.rating) ? `TMDB 평점 ${item.rating.toFixed(1)}` : null,
+  expanded && item.genres?.join(', '),
+  expanded && item.runtime_minutes ? `${item.runtime_minutes}분` : null,
+  expanded && item.season_count ? `시즌 ${item.season_count}개` : null,
+ ].filter(Boolean);
+ const availability = item.availability;
+ const availabilityLink = availability?.source_url?.startsWith('https://www.themoviedb.org/') ? availability.source_url : null;
+ return <>
+  <p className="creator">{['TMDB', ...fields].join(' · ')}</p>
+  {expanded && <div aria-live="polite">
+   {item.detailError && <p className="helper">추가 상세 정보를 불러오지 못했어요.</p>}
+   <h3>{availability?.region === 'KR' || !availability ? '국내 시청 정보' : `${availability.region} 시청 정보`}</h3>
+   {availability === undefined ? <p>시청 정보를 확인 중이에요.</p> :
+    availability === null ? <p>시청 정보를 불러오지 못했어요.</p> :
+    availability.offers.length ? <ul>{availability.offers.map(offer => <li key={offer.type + ':' + offer.name}>{offer.name} · {offer.label}</li>)}</ul> :
+    <p>확인된 시청 제공처 정보가 없어요.</p>}
+   {availability && <p className="helper">시청 제공처 데이터 출처 · JustWatch {availabilityLink && <a className="detail-link" href={availabilityLink} target="_blank" rel="noopener noreferrer">제공처 정보 보기</a>}</p>}
+   <p className="helper" lang="en">This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+  </div>}
+ </>;
+}
+
+function SpotifyDetails({item, showReleaseDate = false}) {
+ if (item.source_name !== 'Spotify') return null;
+ const fields = [
+  item.album,
+  Number.isFinite(item.duration_ms) ? musicTime(item.duration_ms) : null,
+  showReleaseDate ? item.release_date : null,
+ ].filter(Boolean);
+ return <p className="creator">{[...fields, 'Spotify'].join(' · ')}</p>;
+}
+const DESK_INDEX = {
+ audio: ['#FF83B5', '◉'],
+ screen: ['#FFE36E', '▸'],
+ story: ['#A69AFF', '▤'],
+ game: ['#9DE8C5', '✚'],
+ video: ['#FFAA83', '▷'],
+};
 const CATEGORIES=[
  {id:'audio',label:'음악·오디오',color:'#d9c8ef',subcategories:[{id:'music',label:'음악',api:'music'},{id:'podcast',label:'팟캐스트·오디오'}],filters:[['genre','장르',['팝','록','재즈','힙합','클래식','인디']],['mood','분위기',['차분한','신나는','몽환적인','집중되는']],['vocal','보컬 유무',['보컬 중심','연주 중심']]],conditions:['무료 감상','짧은 재생 시간','국내 서비스']},
  {id:'screen',label:'영화·시리즈',color:'#f3b7bd',subcategories:[{id:'movie',label:'영화',api:'movie'},{id:'drama',label:'드라마',api:'series'},{id:'variety',label:'예능'},{id:'animation',label:'애니메이션'}],filters:[['genre','장르',['드라마','코미디','스릴러','로맨스','다큐멘터리','SF']],['mood','분위기',['따뜻한','긴장감 있는','유쾌한','잔잔한']],['subject','소재',['성장','가족','여행','미스터리','음악']]],conditions:['2시간 이내','구독 중인 플랫폼','가족과 함께']},
@@ -31,7 +93,8 @@ function Icon({name}){const paths={search:<><circle cx="11" cy="11" r="6"/><path
 
 function App(){
  const [category,setCategory]=useState('screen'),[subByCategory,setSubByCategory]=useState(initialSub),[selections,setSelections]=useState(emptySelections),[conditionSelections,setConditionSelections]=useState({});
- const [query,setQuery]=useState(''),[mode,setMode]=useState('demo'),[base,setBase]=useState('http://127.0.0.1:5000'),[items,setItems]=useState(samples.filter(x=>x.category==='movie')),[status,setStatus]=useState('ready'),[message,setMessage]=useState(''),[searched,setSearched]=useState(false),[health,setHealth]=useState(''),[detail,setDetail]=useState(null);
+ const [query,setQuery]=useState(''),[mode,setMode]=useState('server'),[base,setBase]=useState(API_BASE_URL),[items,setItems]=useState([]),[status,setStatus]=useState('ready'),[message,setMessage]=useState(''),[searched,setSearched]=useState(false),[health,setHealth]=useState(''),[detail,setDetail]=useState(null);
+ const [providers,setProviders]=useState(null);
  const categoryTabs=useRef([]),activeCategory=CATEGORIES.find(x=>x.id===category),activeSub=activeCategory.subcategories.find(x=>x.id===subByCategory[category]),apiCategory=activeSub?.api;
  const selectedTaste=activeCategory.filters.flatMap(([groupId,groupLabel])=>selections[category][groupId].map(value=>({groupId,groupLabel,value})));
  useEffect(()=>{if(!detail)return;const close=e=>e.key==='Escape'&&setDetail(null);window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close)},[detail]);
@@ -42,32 +105,85 @@ function App(){
  function toggleFilter(group,value){setSelections(current=>{const selected=current[category][group];return {...current,[category]:{...current[category],[group]:selected.includes(value)?selected.filter(x=>x!==value):[...selected,value]}}})}
  function clearCurrentTaste(){setSelections(current=>({...current,[category]:Object.fromEntries(activeCategory.filters.map(([id])=>[id,[]]))}))}
  function toggleCondition(value){const key=`${category}:${activeSub.id}`;setConditionSelections(current=>{const selected=current[key]||[];return {...current,[key]:selected.includes(value)?selected.filter(x=>x!==value):[...selected,value]}})}
- async function request(path){const url=new URL(path,base.trim().replace(/\/$/,'')+'/');if(!['http:','https:'].includes(url.protocol))throw Error('http 또는 https 서버 주소를 입력해 주세요.');const response=await fetch(url,{signal:AbortSignal.timeout(12000)});let data;try{data=await response.json()}catch{throw Error('JSON 응답이 아닙니다. API 주소를 확인해 주세요.')}if(!response.ok)throw Error(typeof data.error==='string'?data.error:data.error?.message||data.message||`서버 오류 (${response.status})`);return data}
- async function search(event){event.preventDefault();if(!query.trim()){setMessage('검색어를 입력해 주세요.');setStatus('validation');return}if(!apiCategory){setItems([]);setSearched(false);setStatus('unavailable');setMessage(`${activeSub.label} 분야는 데이터 연결 준비 중이에요.`);return}setStatus('loading');setMessage('');setSearched(true);setItems([]);try{let result;if(mode==='demo')result=samples.filter(x=>x.category===apiCategory&&`${x.title} ${x.creator}`.includes(query.trim()));else{const params=new URLSearchParams({category:apiCategory,q:query.trim()}),data=await request('api/search?'+params);if(!Array.isArray(data.items))throw Error('응답에 items 배열이 없습니다. 서버 담당자와 형식을 확인해 주세요.');result=data.items.map((x,i)=>({...x,id:x.id??`result-${i}`,title:typeof x.title==='string'?x.title:'제목 정보 없음'}))}setItems(result);setStatus('ready')}catch(error){setStatus('error');setMessage(error.name==='TimeoutError'?'12초 안에 응답하지 않았어요. 서버 상태를 확인해 주세요.':error.message==='Failed to fetch'?'서버 연결 실패: 실행 여부·주소·CORS 설정을 확인해 주세요.':error.message)}}
- async function checkHealth(){setHealth('연결 확인 중…');try{setHealth('서버 응답 확인 · '+JSON.stringify(await request('api/health')))}catch(error){setHealth('연결 확인 실패 · '+error.message)}}
+ async function request(path, server = base){const url=new URL(path,server.trim().replace(/\/$/,'')+'/');if(!['http:','https:'].includes(url.protocol))throw Error('http 또는 https 서버 주소를 입력해 주세요.');const response=await fetch(url,{signal:AbortSignal.timeout(12000)});let data;try{data=await response.json()}catch{throw Error('JSON 응답이 아닙니다. API 주소를 확인해 주세요.')}if(!response.ok)throw Error(typeof data.error==='string'?data.error:data.error?.message||data.message||`서버 오류 (${response.status})`);return data}
+ async function search(event){event.preventDefault();if(!query.trim()){setMessage('검색어를 입력해 주세요.');setStatus('validation');return}if(!apiCategory){setItems([]);setSearched(false);setStatus('unavailable');setMessage(`${activeSub.label} 분야는 데이터 연결 준비 중이에요.`);return}setStatus('loading');setMessage('');setSearched(true);setItems([]);try{let result;if(mode==='demo')result=samples.filter(x=>x.category===apiCategory&&`${x.title} ${x.creator}`.includes(query.trim()));else{const params=new URLSearchParams({category:apiCategory,q:query.trim()}),musicBase=MUSIC_API_BASE || base,data=apiCategory==='music'?await request('api/music/search?'+params,musicBase):await request('api/search?'+params);if(!Array.isArray(data.items))throw Error('응답에 items 배열이 없습니다. 서버 담당자와 형식을 확인해 주세요.');result=data.items.map((x,i)=>({...x,id:x.id??`result-${i}`,title:typeof x.title==='string'?x.title:'제목 정보 없음'}))}setItems(result);setStatus('ready')}catch(error){setStatus('error');setMessage(error.name==='TimeoutError'?'12초 안에 응답하지 않았어요. 서버 상태를 확인해 주세요.':error.message==='Failed to fetch'?'서버 연결 실패: 실행 여부·주소·CORS 설정을 확인해 주세요.':error.message)}}
+ async function openDetail(item) {
+  setDetail(item);
+  if (item.source_name !== 'TMDB') return;
+  const kind = item.category === 'movie' ? 'movie' : 'tv';
+  const path = `api/media/${kind}/${item.provider_id}`;
+  const [record, providers] = await Promise.allSettled([request(path), request(path + '/providers')]);
+  setDetail(current => current === item ? {
+   ...item,
+   ...(record.status === 'fulfilled' ? record.value.item : {}),
+   detailError: record.status === 'rejected',
+   availability: providers.status === 'fulfilled' ? providers.value : null,
+  } : current);
+ }
+ async function checkHealth() {
+  setHealth('연결 확인 중…');
+  try {
+   const data = await request('api/health');
+   if (data.status !== 'ok') throw Error('서버 상태를 확인할 수 없어요.');
+   setProviders(data.providers ?? {});
+   setHealth('검색 서버 연결됨');
+  } catch (error) {
+   setProviders(null);
+   setHealth('연결 확인 실패 · ' + error.message);
+  }
+ }
+ useEffect(() => { void checkHealth(); }, []);
  function switchMode(value){setMode(value);setItems(value==='demo'&&apiCategory?samples.filter(x=>x.category===apiCategory):[]);setMessage('');setStatus('ready');setSearched(false)}
  function safeLink(value){try{const url=new URL(value);return ['http:','https:'].includes(url.protocol)?url.href:null}catch{return null}}
  function tryTasteSearch(){setStatus('unavailable');setMessage('세부 취향 선택은 저장되었어요. AI 추천 연결은 다음 단계에서 제공할 예정입니다.')}
  return <>
   <header className="site-header"><a className="brand" href="#main" aria-label={`${SERVICE_NAME} 탐색으로 이동`}><span className="brand-mark" aria-hidden="true">T</span>{SERVICE_NAME}<span className="prototype">프로토타입</span></a><nav aria-label="주요 메뉴"><span className="nav-current" aria-current="page">탐색</span><span className="nav-disabled" aria-disabled="true">취향 파일 <small>준비 중</small></span></nav></header>
-  <main id="main"><section className="intro"><p className="eyebrow">나만의 콘텐츠 편집실</p><h1>오늘은 어떤 취향을 펼쳐볼까요?</h1><p>좋아하는 것을 고르고, 다음 취향을 발견해 보세요.</p></section>
-   <section className="file-browser" aria-label="콘텐츠 탐색"><div className="category-tabs" role="tablist" aria-label="콘텐츠 분야">{CATEGORIES.map((item,index)=><button key={item.id} ref={node=>categoryTabs.current[index]=node} role="tab" aria-selected={category===item.id} tabIndex={category===item.id?0:-1} style={{'--tab-color':item.color}} className={category===item.id?'active':''} onClick={()=>selectCategory(item.id)} onKeyDown={e=>handleCategoryKey(e,index)}>{item.label}</button>)}</div>
-    <div className="file-sheet" style={{'--category-color':activeCategory.color}}><div className="file-heading"><div><span className="file-kicker">OPEN FILE</span><h2>{activeCategory.label}</h2></div><span className={'mode-badge '+(mode==='server'?'live':'')}>{mode==='demo'?'가상 예시 모드':'Flask 서버 모드'}</span></div>
+  <main id="main" data-field={category} style={{'--category-color':DESK_INDEX[category][0]}}>
+   <section className="intro">
+    <div><p className="eyebrow">MY CREATIVE DESK</p><h1>오늘은 어떤 취향을<br/><em>편집해 볼까요?</em></h1><p>좋아하는 것들로 채워가는 나만의 편집실.</p></div>
+    <div className="desk-collage" aria-hidden="true">
+     <span className="desk-record"><i/></span><span className="desk-film">◢</span><span className="desk-note">CUT.<br/>COLLECT.<br/>CREATE.</span><span className="desk-star">✦</span>
+    </div>
+   </section>
+   <section className="file-browser" aria-label="콘텐츠 탐색"><div className="category-tabs" role="tablist" aria-label="콘텐츠 분야">{CATEGORIES.map((item,index)=><button key={item.id} ref={node=>categoryTabs.current[index]=node} role="tab" aria-selected={category===item.id} tabIndex={category===item.id?0:-1} style={{'--tab-color':DESK_INDEX[item.id][0]}} className={category===item.id?'active':''} onClick={()=>selectCategory(item.id)} onKeyDown={e=>handleCategoryKey(e,index)}><span className="tab-symbol" aria-hidden="true">{DESK_INDEX[item.id][1]}</span>{item.label}</button>)}</div>
+    <div className="file-sheet"><div className="file-heading"><div><span className="file-kicker">OPEN FILE</span><h2>{activeCategory.label}</h2></div><span className={'mode-badge '+(mode==='server'?'live':'')}>{mode==='demo'?'가상 예시 모드':'실제 검색 모드'}</span></div>
+     {mode==='server'&&apiCategory&&<p className="connection-note" role="status">
+      {providers === null ? health || '검색 서버 확인 중…' : !('tmdb_configured' in providers) ? '검색 서버 연결됨 · 데이터 출처는 결과에서 확인할 수 있어요.' :
+       apiCategory==='music' ? (providers.spotify_configured ? 'Spotify 설정됨 · 음악 검색' : '음악 검색 · Apple iTunes 사용 · Spotify 인증 대기') :
+       providers.tmdb_configured ? 'TMDB 설정됨 · 작품과 시청 제공처 검색' : '영화·드라마 검색 · Apple iTunes / Wikipedia 사용 · TMDB 인증 대기'}
+     </p>}
      <div className="sub-tabs" role="tablist" aria-label={`${activeCategory.label} 종류`}>{activeCategory.subcategories.map(item=><button key={item.id} role="tab" aria-selected={activeSub.id===item.id} className={activeSub.id===item.id?'active':''} onClick={()=>selectSub(item.id)}>{item.label}{!item.api&&<span className="dot" aria-label="데이터 연결 준비 중"/>}</button>)}</div>
      {!apiCategory&&<p className="connection-note" role="status"><strong>{activeSub.label}</strong>은 데이터 연결 준비 중입니다. 취향 태그는 미리 선택할 수 있어요.</p>}
      <form className="work-search" onSubmit={search} noValidate><label htmlFor="query">이미 좋아하는 작품이 있나요? 검색해 보세요.</label><div className="search-row"><div className="input-wrap"><Icon name="search"/><input id="query" value={query} onChange={e=>{setQuery(e.target.value);if(status==='validation'){setMessage('');setStatus('ready')}}} placeholder="작품 제목을 입력해 주세요" disabled={status==='loading'} aria-describedby="search-help search-message"/></div><button className="primary" disabled={status==='loading'}>{status==='loading'?'검색 중…':'작품 검색'}</button></div><p id="search-help" className="helper">검색은 선택 사항이에요. 아래에서 취향을 바로 골라도 좋아요.</p>{message&&<div id="search-message" className={`notice ${status==='error'?'error':''}`} role={status==='error'||status==='validation'?'alert':'status'}>{message}</div>}</form>
-     <section className="taste-editor" aria-labelledby="taste-title"><div className="section-title"><div><span>취향 체크리스트</span><h2 id="taste-title">어떤 작품을 펼쳐볼까요?</h2></div><p>모든 항목은 여러 개 선택할 수 있어요.</p></div>
-      <div className="taste-columns">{activeCategory.filters.map(([id,label,options],groupIndex)=><fieldset className={`taste-group taste-group-${groupIndex+1}`} key={id}><legend>{label}</legend><p className="selection-guide">여러 개 선택 가능</p><div className="taste-list">{options.map(option=>{const checked=selections[category][id].includes(option),inputId=`taste-${category}-${id}-${option}`;return <div className="taste-option" key={option}><input id={inputId} type="checkbox" checked={checked} onChange={()=>toggleFilter(id,option)}/><label htmlFor={inputId}><span className="check-mark" aria-hidden="true">{checked?'✓':''}</span><span className="option-copy"><strong>{option}</strong>{groupIndex===1&&<small>{TASTE_DESCRIPTIONS[category]?.[option]||`${option} 느낌을 중심으로 살펴봐요.`}</small>}</span></label></div>})}</div></fieldset>)}</div>
-      <section className="taste-summary" aria-labelledby="taste-summary-title"><div className="summary-heading"><div><span>SELECTION NOTE</span><h3 id="taste-summary-title">내가 고른 취향</h3></div>{selectedTaste.length>0&&<button type="button" className="clear-taste" onClick={clearCurrentTaste}>현재 분야 선택 초기화</button>}</div>{selectedTaste.length===0?<p className="summary-empty">끌리는 항목을 골라 주세요. 모르는 항목은 넘어가도 괜찮아요.</p>:<div className="summary-labels">{selectedTaste.map(item=><div className="paper-label" key={`${item.groupId}-${item.value}`}><span><small>{item.groupLabel}</small>{item.value}</span><button type="button" onClick={()=>toggleFilter(item.groupId,item.value)} aria-label={`${item.groupLabel} ${item.value} 선택 해제`}>×</button></div>)}</div>}</section>
+     <section className="taste-editor" aria-labelledby="taste-title">
+      <div className="tape-board">
+       <div className="tape-board-index"><span>01 / TASTE LABELS</span><span role="status">{selectedTaste.length}개 선택됨</span></div>
+       <h2 id="taste-title">오늘의 취향을 붙여 보세요!</h2>
+       <p className="tape-board-guide">지금 끌리는 키워드를 자유롭게 골라 보세요.</p>
+       <div className="tape-board-grid">
+        {activeCategory.filters.flatMap(([id, label, options]) => options.map(option => {
+         const checked = selections[category][id].includes(option);
+         const inputId = `taste-${category}-${id}-${option}`;
+         return <div className="taste-option" key={inputId}>
+          <input id={inputId} type="checkbox" checked={checked} onChange={() => toggleFilter(id, option)} aria-label={`${label} · ${option}`} title={TASTE_DESCRIPTIONS[category]?.[option]}/>
+          <label htmlFor={inputId} title={TASTE_DESCRIPTIONS[category]?.[option]}>{option}{checked && <span aria-hidden="true">✓</span>}</label>
+         </div>;
+        }))}
+       </div>
+       <div className="tape-board-footer">
+        <span>MY TASTE / {String(selectedTaste.length).padStart(2, '0')}</span>
+        <button type="button" onClick={clearCurrentTaste} disabled={!selectedTaste.length}>선택 초기화</button>
+       </div>
+      </div>
       <details className="conditions"><summary>이용 조건 <span>UI 초안 · 추천 미반영</span></summary><p>플랫폼 제공 여부 등 아직 검증되지 않은 조건입니다.</p><div className="chips">{activeCategory.conditions.map(option=>{const key=`${category}:${activeSub.id}`,pressed=(conditionSelections[key]||[]).includes(option);return <button type="button" key={option} aria-pressed={pressed} className={pressed?'selected':''} onClick={()=>toggleCondition(option)}>{option}</button>})}</div></details><button type="button" className="taste-cta" onClick={tryTasteSearch}>내 취향으로 찾아보기 <span>추천 연동 전</span></button>
      </section>
-     <details className="settings"><summary>개발용 연결 설정 <span>예시 데이터 / Flask API</span></summary><div className="settings-body"><fieldset><legend>데이터 연결 방식</legend><label><input type="radio" name="mode" checked={mode==='demo'} onChange={()=>switchMode('demo')}/> 가상 예시 데이터</label><label><input type="radio" name="mode" checked={mode==='server'} onChange={()=>switchMode('server')}/> Flask 서버</label></fieldset><label htmlFor="base">Flask 서버 주소</label><div className="search-row"><input id="base" value={base} onChange={e=>setBase(e.target.value)} placeholder="http://127.0.0.1:5000"/><button type="button" className="secondary" onClick={checkHealth}>연결 확인</button></div><p className="helper">같은 PC는 127.0.0.1, 다른 PC의 서버는 전달받은 접속 주소를 입력하세요. 비밀 키는 입력하지 않습니다.</p>{health&&<p className="health" role="status">{health}</p>}<code>GET /api/search?category={apiCategory||'미연동'}&amp;q=검색어 · 응답: {'{ items: [...] }'}</code></div></details>
+     <details className="settings"><summary>검색 모드 및 연결 설정 <span>예시 데이터 / Flask API</span></summary><div className="settings-body"><fieldset><legend>데이터 연결 방식</legend><label><input type="radio" name="mode" checked={mode==='demo'} onChange={()=>switchMode('demo')}/> 가상 예시 데이터</label><label><input type="radio" name="mode" checked={mode==='server'} onChange={()=>switchMode('server')}/> 실제 검색</label></fieldset><label htmlFor="base">Flask 서버 주소</label><div className="search-row"><input id="base" value={base} onChange={e=>setBase(e.target.value)} placeholder={LOCAL_API_BASE}/><button type="button" className="secondary" onClick={checkHealth}>연결 확인</button></div><p className="helper">같은 PC는 127.0.0.1, 다른 PC의 서버는 전달받은 접속 주소를 입력하세요. 비밀 키는 입력하지 않습니다.</p>{health&&<p className="health" role="status">{health}</p>}<code>GET /api/search?category={apiCategory||'미연동'}&amp;q=검색어 · 응답: {'{ items: [...] }'}</code></div></details>
     </div></section>
    <section className="results" aria-live="polite"><div className="result-title"><div><span>SELECTED WORKS</span><h2>{searched?'검색 결과':'파일 속 작품'} <b>{items.length}</b></h2></div><p>{mode==='demo'?'표시된 작품은 모두 가상 예시입니다.':'서버가 반환한 데이터만 표시합니다.'}</p></div>
-    {status==='loading'?<div className="empty"><span className="spinner"/>작품 정보를 불러오고 있어요.</div>:items.length===0&&status!=='error'?<div className="empty"><strong>{!apiCategory?'데이터 연결 준비 중이에요.':searched?'검색 결과가 없어요.':mode==='server'?'서버 검색을 기다리고 있어요.':'아직 펼쳐둔 작품이 없어요.'}</strong><p>{!apiCategory?'다른 연결된 분류를 선택하거나 취향 태그를 미리 골라보세요.':searched?'다른 검색어로 다시 찾아보세요.':mode==='server'?'검색어를 입력해 서버 데이터를 확인하세요.':'작품을 검색해 보세요.'}</p></div>:<div className="grid">{items.map(item=><article className="card" key={item.id}><div className="art" style={{background:`linear-gradient(145deg,${item.colors?.[0]||'#dfe5e3'},${item.colors?.[1]||'#9ba8b3'})`}}>{item.image_url&&<img src={item.image_url} alt={`${item.title} 표지`} onError={e=>e.currentTarget.style.display='none'}/>}<span className="art-symbol">{item.symbol||'□'}</span><span className="art-label">{mode==='demo'?'가상 예시':'SERVER CONTENT'}</span></div><div className="card-body"><div className="card-meta"><span>{CATEGORIES.flatMap(x=>x.subcategories).find(x=>x.api===item.category)?.label||'콘텐츠'}</span><div className="save-actions" aria-label="작품 저장 기능"><button disabled title="나중에 볼 작품 저장 준비 중" aria-label="나중에 볼 작품 저장 준비 중"><Icon name="bookmark"/></button><button disabled title="좋아하는 작품 저장 준비 중" aria-label="좋아하는 작품 저장 준비 중"><Icon name="heart"/></button></div></div><h3>{item.title}</h3><p className="creator">{item.creator||'매체 정보 미제공'}</p><p>{item.description||item.overview||'짧은 설명이 제공되지 않았습니다.'}</p><div className="card-actions"><button className="secondary" onClick={()=>setDetail(item)}>상세 보기</button>{safeLink(item.source_url)?<a href={safeLink(item.source_url)} target="_blank" rel="noopener noreferrer">공식 링크 <Icon name="external"/></a>:<span className="no-link">공식 링크 미제공</span>}</div></div></article>)}</div>}
+    {status==='loading'?<div className="empty"><span className="spinner"/>작품 정보를 불러오고 있어요.</div>:items.length===0&&status!=='error'?<div className="empty"><strong>{!apiCategory?'데이터 연결 준비 중이에요.':searched?'검색 결과가 없어요.':mode==='server'?'서버 검색을 기다리고 있어요.':'아직 펼쳐둔 작품이 없어요.'}</strong><p>{!apiCategory?'다른 연결된 분류를 선택하거나 취향 태그를 미리 골라보세요.':searched?'다른 검색어로 다시 찾아보세요.':mode==='server'?'검색어를 입력해 서버 데이터를 확인하세요.':'작품을 검색해 보세요.'}</p></div>:<div className="grid">{items.map(item=><article className="card" key={item.id}><div className="art">{item.image_url&&<img src={item.image_url} alt={`${item.title} 표지`} onError={e=>e.currentTarget.style.display='none'}/>}<span className="art-symbol">{item.symbol||DESK_INDEX[category][1]}</span><span className="art-label">{mode==='demo'?'가상 예시':'SERVER CONTENT'}</span></div><div className="card-body"><div className="card-meta"><span>{CATEGORIES.flatMap(x=>x.subcategories).find(x=>x.api===item.category)?.label||'콘텐츠'}</span><div className="save-actions" aria-label="작품 저장 기능"><button disabled title="나중에 볼 작품 저장 준비 중" aria-label="나중에 볼 작품 저장 준비 중"><Icon name="bookmark"/></button><button disabled title="좋아하는 작품 저장 준비 중" aria-label="좋아하는 작품 저장 준비 중"><Icon name="heart"/></button></div></div><h3>{item.title}</h3><p className="creator">{item.creator||'매체 정보 미제공'}</p><SpotifyDetails item={item}/><MediaDetails item={item}/><ExternalDetails item={item}/>{item.source_name!=='Spotify'&&<p>{item.description||item.overview||item.summary||'짧은 설명이 제공되지 않았습니다.'}</p>}<div className="card-actions"><button className="secondary" onClick={()=>openDetail(item)}>상세 보기</button>{safeLink(item.source_url)?<a href={safeLink(item.source_url)} target="_blank" rel="noopener noreferrer">{item.source_name==='Spotify'?'Spotify에서 이 곡 열기':'출처 링크'} <Icon name="external"/></a>:<span className="no-link">공식 링크 미제공</span>}</div></div></article>)}</div>}
    </section></main>
   <footer><strong>{SERVICE_NAME}</strong><p>음악·오디오 / 영화·시리즈 / 책·스토리 / 게임 / 유튜브·영상</p><small>콘텐츠 탐색 프로토타입 · 저장 및 AI 추천은 준비 중입니다.</small></footer>
-  {detail&&<div className="modal-backdrop" onMouseDown={()=>setDetail(null)}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="detail-title" onMouseDown={e=>e.stopPropagation()}><button className="close" onClick={()=>setDetail(null)} autoFocus>닫기</button><span className="eyebrow">{mode==='demo'?'가상 예시 작품':'서버 제공 정보'}</span><h2 id="detail-title">{detail.title}</h2><p>{detail.description||detail.overview||'소개 정보가 제공되지 않았습니다.'}</p>{safeLink(detail.source_url)?<a className="detail-link" href={safeLink(detail.source_url)} target="_blank" rel="noopener noreferrer">공식 링크 열기 <Icon name="external"/></a>:<p className="helper">공식 링크 미제공 · 가격·평점·감상 기록은 포함되지 않습니다.</p>}</section></div>}
+  {detail&&<div className="modal-backdrop" onMouseDown={()=>setDetail(null)}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="detail-title" onMouseDown={e=>e.stopPropagation()}><button className="close" onClick={()=>setDetail(null)} autoFocus>닫기</button><span className="eyebrow">{mode==='demo'?'가상 예시 작품':'서버 제공 정보'}</span><h2 id="detail-title">{detail.title}</h2><div className="modal-cover"><span aria-hidden="true">{detail.symbol || DESK_INDEX[category][1]}</span>{detail.image_url && <img src={detail.image_url} alt={detail.title + " 표지"} onLoad={e=>e.currentTarget.previousElementSibling.hidden=true} onError={e=>e.currentTarget.hidden=true}/>}</div>{detail.creator && <p className="modal-meta">{detail.creator}</p>}<SpotifyDetails item={detail} showReleaseDate/><MediaDetails item={detail} expanded/><ExternalDetails item={detail}/>{detail.source_name!=='Spotify'&&<p>{detail.description||detail.overview||detail.summary||'소개 정보가 제공되지 않았습니다.'}</p>}{safeLink(detail.source_url)?<a className="detail-link" href={safeLink(detail.source_url)} target="_blank" rel="noopener noreferrer">{detail.source_name==='Spotify'?'Spotify에서 이 곡 열기':'출처 링크 열기'} <Icon name="external"/></a>:<p className="helper">공식 링크 미제공 · 가격·평점·감상 기록은 포함되지 않습니다.</p>}</section></div>}
  </>
 }
 createRoot(document.getElementById('root')).render(<App/>);

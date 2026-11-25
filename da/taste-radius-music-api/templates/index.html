@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#100e14">
+    <title>음악 검색 | 취향 반경</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='music.css') }}">
+    <script src="{{ url_for('static', filename='music.js') }}" defer></script>
+</head>
+<body>
+    <header class="site-header">
+        <div class="shell header-inner">
+            <a class="brand" href="/"><span class="brand-icon" aria-hidden="true">♫</span>취향 반경</a>
+            <span class="store">Spotify · {{ country }}</span>
+        </div>
+    </header>
+    <main class="shell">
+        <section class="hero" aria-labelledby="page-title">
+            <div class="record" aria-hidden="true"></div>
+            <div class="hero-content">
+                <h1 id="page-title">음악 검색</h1>
+                <p>곡명이나 아티스트로 찾고, Spotify에서 들어보세요.</p>
+                <form id="search-form" role="search" action="/">
+                    <label class="visually-hidden" for="query">곡명 또는 아티스트</label>
+                    <div class="search-field">
+                        <span class="magnifier" aria-hidden="true"></span>
+                        <input id="query" name="q" type="search" placeholder="예: BTS Dynamite" required>
+                    </div>
+                    <button class="search-button" type="submit">검색</button>
+                </form>
+            </div>
+        </section>
+        <section class="results" aria-labelledby="results-title">
+            <div class="results-heading">
+                <h2 id="results-title">검색 결과</h2>
+                <span id="result-count" hidden></span>
+            </div>
+            <div id="status" class="status" role="status" aria-live="polite">
+                <span class="spinner" aria-hidden="true" hidden></span>
+                <p id="status-text">찾고 싶은 곡이나 아티스트를 검색해 보세요.</p>
+            </div>
+            <ul id="tracks" class="tracks" aria-busy="false"></ul>
+            <noscript><p>검색하려면 브라우저에서 JavaScript를 켜 주세요.</p></noscript>
+        </section>
+    </main>
+</body>
+</html>

@@ -58,12 +58,13 @@ GET /api/search?category=music&q=BTS
 
 ```text
 id, category, title, creator, image_url, source_url,
-genre, duration_ms, price_amount, currency, country,
+genre, duration_ms, price_amount, price_type, currency, country,
 source_name, data_status, verification_status, checked_at
 ```
 
 - `verification_status`: 외부 출처에서 확인한 항목은 `verified_external`
 - `checked_at`: 외부 정보를 확인한 ISO 8601 시각
+- `price_type`: Apple 가격은 구독료가 아닌 `store_purchase`(개별 구매가)
 - 외부 API가 제공하지 않는 가격·평점·OTT 정보는 임의로 만들지 않고 비워 둡니다.
 
 ## 자동 테스트와 빌드

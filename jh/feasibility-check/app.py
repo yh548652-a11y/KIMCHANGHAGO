@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import socket
 from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
@@ -12,7 +13,10 @@ from flask import Flask, jsonify, request
 ALLOWED_CATEGORIES = {"movie", "series", "music"}
 
 ITUNES_SEARCH_URL = "https://itunes.apple.com/search"
-WIKIPEDIA_API_URL = "https://ko.wikipedia.org/w/api.php"
+WIKIPEDIA_API_URLS = {
+    "ko": "https://ko.wikipedia.org/w/api.php",
+    "en": "https://en.wikipedia.org/w/api.php",
+}
 ITUNES_CATEGORY_PARAMS = {
     "movie": {"media": "movie", "entity": "movie"},
     "series": {"media": "tvShow", "entity": "tvSeason"},
@@ -53,6 +57,7 @@ def normalize_itunes_item(item: dict, category: str) -> dict:
         "genre": item.get("primaryGenreName"),
         "duration_ms": item.get("trackTimeMillis"),
         "price_amount": price,
+        "price_type": "store_purchase" if price is not None else None,
         "currency": item.get("currency"),
         "country": item.get("country"),
         "source_name": "Apple iTunes Search API",
@@ -60,6 +65,15 @@ def normalize_itunes_item(item: dict, category: str) -> dict:
         "verification_status": "verified_external",
         "checked_at": utc_now_iso(),
     }
+
+
+def is_relevant_item(item: dict, query: str) -> bool:
+    """검색어의 모든 단어가 제목·제작자 중 하나에는 포함되는 결과만 허용합니다."""
+    query_tokens = re.findall(r"\w+", query.casefold())
+    searchable = " ".join(
+        str(item.get(key) or "") for key in ("title", "creator")
+    ).casefold()
+    return bool(query_tokens) and all(token in searchable for token in query_tokens)
 
 
 def fetch_itunes_items(category: str, query: str, limit: int = 6) -> list[dict]:
@@ -99,15 +113,21 @@ def fetch_itunes_items(category: str, query: str, limit: int = 6) -> list[dict]:
         except (HTTPError, URLError, socket.timeout, TimeoutError, ValueError, json.JSONDecodeError) as error:
             raise ExternalApiError("외부 콘텐츠 API 보조 응답을 받지 못했습니다.") from error
     normalized_items = [normalize_itunes_item(item, category) for item in results]
-    return [item for item in normalized_items if item["id"] and item["title"]]
+    return [
+        item
+        for item in normalized_items
+        if item["id"] and item["title"] and is_relevant_item(item, query)
+    ]
 
 
 def fetch_wikipedia_movies(query: str, limit: int = 6) -> list[dict]:
-    """영화 검색 결과가 없을 때 한국어 Wikipedia의 실제 문서를 보조 조회합니다."""
+    """영화 검색 결과가 없을 때 검색 언어에 맞는 Wikipedia 문서를 보조 조회합니다."""
+    language = "ko" if re.search(r"[가-힣]", query) else "en"
+    movie_word = "영화" if language == "ko" else "film"
     params = {
         "action": "query",
         "generator": "search",
-        "gsrsearch": f'"{query}" 영화',
+        "gsrsearch": f'"{query}" {movie_word}',
         "gsrlimit": limit,
         "prop": "pageimages|extracts",
         "piprop": "thumbnail",
@@ -117,7 +137,7 @@ def fetch_wikipedia_movies(query: str, limit: int = 6) -> list[dict]:
         "format": "json",
         "origin": "*",
     }
-    request_url = f"{WIKIPEDIA_API_URL}?{urlencode(params)}"
+    request_url = f"{WIKIPEDIA_API_URLS[language]}?{urlencode(params)}"
     request_object = Request(
         request_url,
         headers={"User-Agent": "TasteRadiusFeasibilityCheck/1.0"},
@@ -133,8 +153,9 @@ def fetch_wikipedia_movies(query: str, limit: int = 6) -> list[dict]:
     pages = list(payload.get("query", {}).get("pages", {}).values())
     pages.sort(
         key=lambda page: (
-            "(영화)" not in page.get("title", ""),
-            "영화" not in page.get("extract", ""),
+            ("(영화)" if language == "ko" else "(film)")
+            not in page.get("title", "").lower(),
+            movie_word not in page.get("extract", "").lower(),
         )
     )
 
@@ -143,12 +164,16 @@ def fetch_wikipedia_movies(query: str, limit: int = 6) -> list[dict]:
         title = page.get("title")
         page_id = page.get("pageid")
         extract = page.get("extract", "")
-        normalized_title = title.replace(" (영화)", "").strip() if title else ""
+        normalized_title = (
+            title.replace(" (영화)", "").replace(" (film)", "").strip()
+            if title
+            else ""
+        )
         if (
             not title
             or not page_id
             or normalized_title.casefold() != query.strip().casefold()
-            or "영화" not in f"{title} {extract}"
+            or movie_word not in f"{title} {extract}".lower()
         ):
             continue
         items.append(
@@ -158,14 +183,19 @@ def fetch_wikipedia_movies(query: str, limit: int = 6) -> list[dict]:
                 "title": title,
                 "creator": None,
                 "image_url": page.get("thumbnail", {}).get("source"),
-                "source_url": f"https://ko.wikipedia.org/?curid={page_id}",
+                "source_url": f"https://{language}.wikipedia.org/?curid={page_id}",
                 "genre": None,
                 "duration_ms": None,
                 "price_amount": None,
+                "price_type": None,
                 "currency": None,
                 "country": "KR",
                 "summary": extract[:260] if extract else None,
-                "source_name": "한국어 Wikipedia API",
+                "source_name": (
+                    "한국어 Wikipedia API"
+                    if language == "ko"
+                    else "English Wikipedia API"
+                ),
                 "data_status": "external_api",
                 "verification_status": "verified_external",
                 "checked_at": utc_now_iso(),
@@ -214,7 +244,11 @@ def create_app() -> Flask:
                 "status": "ok",
                 "service": "taste-radius-api",
                 "data_mode": "external_api",
-                "external_sources": ["Apple iTunes Search API", "한국어 Wikipedia API"],
+                "external_sources": [
+                    "Apple iTunes Search API",
+                    "한국어 Wikipedia API",
+                    "English Wikipedia API",
+                ],
             }
         )
 

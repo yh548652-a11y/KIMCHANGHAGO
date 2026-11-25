@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from app import create_app
+from app import create_app, is_relevant_item, normalize_itunes_item
 
 
 class AppTestCase(unittest.TestCase):
@@ -72,6 +72,23 @@ class AppTestCase(unittest.TestCase):
             response.headers["Access-Control-Allow-Origin"],
             "http://127.0.0.1:5173",
         )
+
+    def test_relevance_filter_rejects_different_series(self):
+        item = {"title": "Elementary, Season 2", "creator": "Elementary"}
+        self.assertFalse(is_relevant_item(item, "Sherlock"))
+
+    def test_normalized_apple_price_is_marked_as_store_purchase(self):
+        item = normalize_itunes_item(
+            {
+                "trackId": 1,
+                "trackName": "테스트 곡",
+                "artistName": "테스트 가수",
+                "trackPrice": 1.29,
+                "currency": "USD",
+            },
+            "music",
+        )
+        self.assertEqual(item["price_type"], "store_purchase")
 
 
 if __name__ == "__main__":

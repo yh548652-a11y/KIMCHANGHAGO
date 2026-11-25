@@ -202,6 +202,9 @@ function App() {
                     )}
                     {item.price_amount != null && (
                       <p className="mt-3 text-sm font-bold text-slate-800">
+                        {item.price_type === "store_purchase"
+                          ? "Apple Store 개별 구매가: "
+                          : "가격: "}
                         {item.price_amount} {item.currency ?? ""}
                       </p>
                     )}

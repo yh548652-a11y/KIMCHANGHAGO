@@ -59,8 +59,12 @@ GET /api/search?category=music&q=BTS
 ```text
 id, category, title, creator, image_url, source_url,
 genre, duration_ms, price_amount, currency, country,
-source_name, data_status
+source_name, data_status, verification_status, checked_at
 ```
+
+- `verification_status`: 외부 출처에서 확인한 항목은 `verified_external`
+- `checked_at`: 외부 정보를 확인한 ISO 8601 시각
+- 외부 API가 제공하지 않는 가격·평점·OTT 정보는 임의로 만들지 않고 비워 둡니다.
 
 ## 자동 테스트와 빌드
 
@@ -70,7 +74,7 @@ cd frontend
 npm run build
 ```
 
-2026-11-24 확인 결과 Flask 테스트 7개와 React 생산 빌드가 통과했습니다.
+2026-11-25 확인 결과 Flask 테스트 7개와 React 생산 빌드가 통과했습니다.
 
 ## 환경변수
 

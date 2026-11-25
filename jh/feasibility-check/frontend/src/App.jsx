@@ -205,6 +205,12 @@ function App() {
                         {item.price_amount} {item.currency ?? ""}
                       </p>
                     )}
+                    <div className="mt-4 border-t border-slate-100 pt-3 text-xs leading-5 text-slate-500">
+                      <p>출처: {item.source_name}</p>
+                      {item.checked_at && (
+                        <p>확인 시점: {new Date(item.checked_at).toLocaleString("ko-KR")}</p>
+                      )}
+                    </div>
                     {item.source_url && (
                       <a
                         href={item.source_url}

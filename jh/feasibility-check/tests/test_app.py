@@ -23,6 +23,8 @@ class AppTestCase(unittest.TestCase):
                 "title": "테스트 영화",
                 "source_name": "Apple iTunes Search API",
                 "data_status": "external_api",
+                "verification_status": "verified_external",
+                "checked_at": "2026-11-25T00:00:00+00:00",
             }
         ]
         response = self.client.get("/api/search?category=movie&q=test")
@@ -31,6 +33,8 @@ class AppTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(body["meta"]["data_mode"], "external_api")
         self.assertEqual(body["items"][0]["data_status"], "external_api")
+        self.assertEqual(body["items"][0]["verification_status"], "verified_external")
+        self.assertIn("checked_at", body["meta"])
         mock_fetch.assert_called_once_with("movie", "test")
 
     @patch("app.fetch_external_items")

@@ -1,6 +1,7 @@
 import os
 import json
 import socket
+from datetime import datetime, timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -21,6 +22,11 @@ ITUNES_CATEGORY_PARAMS = {
 
 class ExternalApiError(Exception):
     """외부 콘텐츠 API가 정상 응답하지 못했을 때 사용하는 오류입니다."""
+
+
+def utc_now_iso() -> str:
+    """외부 정보를 확인한 시각을 ISO 8601 UTC 형식으로 반환합니다."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _first_value(item, *keys):
@@ -51,6 +57,8 @@ def normalize_itunes_item(item: dict, category: str) -> dict:
         "country": item.get("country"),
         "source_name": "Apple iTunes Search API",
         "data_status": "external_api",
+        "verification_status": "verified_external",
+        "checked_at": utc_now_iso(),
     }
 
 
@@ -159,6 +167,8 @@ def fetch_wikipedia_movies(query: str, limit: int = 6) -> list[dict]:
                 "summary": extract[:260] if extract else None,
                 "source_name": "한국어 Wikipedia API",
                 "data_status": "external_api",
+                "verification_status": "verified_external",
+                "checked_at": utc_now_iso(),
             }
         )
     return items
@@ -248,6 +258,7 @@ def create_app() -> Flask:
                 "meta": {
                     "count": len(items),
                     "data_mode": "external_api",
+                    "checked_at": utc_now_iso(),
                     "source_names": source_names,
                     "notice": (
                         "외부 API의 실제 검색 결과입니다. Apple 가격은 제공되는 경우의 "

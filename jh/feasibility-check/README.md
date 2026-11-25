@@ -15,7 +15,7 @@ Apple 가격은 제공되는 경우의 Store 구매 가격이며 OTT·음악 구
 PowerShell 터미널 1에서 Flask를 실행합니다.
 
 ```powershell
-cd "프로젝트 경로\taste-radius-flask-mock"
+cd "팀 저장소 경로\KIMCHANGHAGO\jh\feasibility-check"
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
@@ -25,7 +25,7 @@ python app.py
 PowerShell 터미널 2에서 React를 실행합니다.
 
 ```powershell
-cd "프로젝트 경로\taste-radius-flask-mock\frontend"
+cd "팀 저장소 경로\KIMCHANGHAGO\jh\feasibility-check\frontend"
 npm install
 npm run dev
 ```

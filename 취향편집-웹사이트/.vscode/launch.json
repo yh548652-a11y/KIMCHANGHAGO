@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "취향편집 웹 미리보기",
+      "type": "editor-browser",
+      "request": "launch",
+      "url": "http://127.0.0.1:5182/",
+      "preLaunchTask": "취향편집 개발 서버"
+    }
+  ]
+}

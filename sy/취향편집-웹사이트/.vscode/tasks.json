@@ -1,0 +1,19 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "취향편집 개발 서버",
+      "type": "process",
+      "command": "node",
+      "args": ["./node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", "5182", "--strictPort"],
+      "options": { "cwd": "${workspaceFolder}" },
+      "isBackground": true,
+      "presentation": { "reveal": "always", "panel": "dedicated", "focus": false },
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^(.+):(\\d+):\\s+(.+)$", "file": 1, "line": 2, "message": 3 },
+        "background": { "activeOnStart": true, "beginsPattern": "VITE.*ready", "endsPattern": "Local:.*5182" }
+      }
+    }
+  ]
+}
